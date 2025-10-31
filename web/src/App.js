@@ -1,13 +1,15 @@
 // File: web/src/App.js
+// (เพิ่ม 1 Route)
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './LoginPage';
-import AdminLayout from './AdminLayout'; // ⭐️ Import Layout ใหม่
-import DashboardHome from './DashboardHome'; // ⭐️ หน้า Dashboard หลัก
-import UserManagement from './UserManagement'; // Component เดิม
-import GeofenceManagement from './GeofenceManagement'; // Component เดิม
-import AttendanceLogPage from './AttendanceLogPage'; // ⭐️ หน้าใหม่สำหรับ Log
-import SubjectManagement from './SubjectManagement'; // ⭐️⭐️ IMPORT ใหม่ ⭐️⭐️
+import AdminLayout from './AdminLayout'; 
+import DashboardHome from './DashboardHome'; 
+import UserManagement from './UserManagement'; 
+import GeofenceManagement from './GeofenceManagement'; 
+import AttendanceLogPage from './AttendanceLogPage'; 
+import SubjectManagement from './SubjectManagement'; 
+import SubjectEnrollmentPage from './SubjectEnrollmentPage'; // ⭐️⭐️ IMPORT ใหม่ ⭐️⭐️
 import { getToken } from './auth';
 
 // Component ป้องกัน
@@ -34,8 +36,12 @@ function App() {
         <Route index element={<DashboardHome />} /> {/* หน้าแรก (Dashboard) */}
         <Route path="users" element={<UserManagement />} />
         <Route path="geofences" element={<GeofenceManagement />} />
-        <Route path="subjects" element={<SubjectManagement />} /> {/* ⭐️⭐️ Route ที่เพิ่ม ⭐️⭐️ */}
+        <Route path="subjects" element={<SubjectManagement />} /> 
         <Route path="logs" element={<AttendanceLogPage />} />
+        
+        {/* ⭐️⭐️ ADD THIS LINE ⭐️⭐️ */}
+        <Route path="subjects/:id/users" element={<SubjectEnrollmentPage />} />
+
       </Route>
 
       {/* ถ้าเข้าหน้าอื่น ให้เด้งกลับหน้าหลัก */}

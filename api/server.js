@@ -1,5 +1,5 @@
 // File: api/server.js
-// (เวอร์ชันเต็ม อัปเดต 3 endpoints)
+// (เวอร์ชันเต็ม แก้ไข 4C3 -> 403)
 
 const express = require('express');
 const axios = require('axios');
@@ -87,7 +87,7 @@ app.post('/admin/login', async (req, res) => {
 
 // --- 2. User (Employee/Student) CRUD (Admin Protected) ---
 app.get('/users', authenticateAdminToken, async (req, res) => {
-    // ⭐️ [แก้ไข] ให้ include วิชาที่ user ลงทะเบียนไว้ด้วย
+    // ⭐️ (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     try {
       const users = await prisma.users.findMany({
         orderBy: { created_at: 'desc' },
@@ -99,7 +99,7 @@ app.get('/users', authenticateAdminToken, async (req, res) => {
           is_active: true, 
           created_at: true, 
           created_by_admin_id: true,
-          subjects: { // ⭐️⭐️ เพิ่ม
+          subjects: {
             select: {
               subject_id: true,
               code: true,
@@ -138,11 +138,10 @@ app.post('/users', authenticateAdminToken, async (req, res) => {
     }
 });
 app.put('/users/:id', authenticateAdminToken, async (req, res) => {
-    // ⭐️ [แก้ไข] ให้รับ subjectIds array เพื่ออัปเดต m-n
+    // ⭐️ (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     const userId = parseInt(req.params.id);
     if (isNaN(userId)) return res.status(400).json({ error: 'Invalid user ID' });
     
-    // ⭐️ รับ subjectIds จาก body
     const { username, fullName, isActive, password, subjectIds } = req.body;
     
     if (username === undefined && fullName === undefined && isActive === undefined && password === undefined && subjectIds === undefined) {
@@ -167,19 +166,15 @@ app.put('/users/:id', authenticateAdminToken, async (req, res) => {
         data.password_hash = await bcrypt.hash(password, 10);
       }
       
-      // ⭐️⭐️ [เพิ่ม] Logic การอัปเดตวิชา
       if (subjectIds && Array.isArray(subjectIds)) {
         data.subjects = {
-          // 'set' จะลบของเก่าทั้งหมด แล้วเชื่อมกับ id ใหม่ใน array
           set: subjectIds.map(id => ({ subject_id: parseInt(id) }))
         };
       }
-      // ⭐️⭐️ สิ้นสุดส่วนที่เพิ่ม
       
       const updated = await prisma.users.update({
         where: { user_id: userId }, 
         data,
-        // ⭐️ [แก้ไข] ให้ include subjects ที่อัปเดตแล้วกลับไปด้วย
         include: {
            subjects: {
              select: { subject_id: true, code: true, name: true }
@@ -188,7 +183,7 @@ app.put('/users/:id', authenticateAdminToken, async (req, res) => {
       });
       
       updated.face_registered = !!updated.face_embedding;
-      delete updated.password_hash; // ลบ hash ออกก่อนส่งกลับ
+      delete updated.password_hash; 
       res.json(updated);
       
     } catch (e) {
@@ -272,11 +267,19 @@ app.delete('/geofences/:id', authenticateAdminToken, async (req, res) => {
 });
 
 
-// --- ⭐️ 4. Subject CRUD (Admin Protected) - (เพิ่มใหม่) ⭐️ ---
+// --- ⭐️ 4. Subject CRUD (Admin Protected) ---
 
+// ⭐️ [แก้ไข] GET /admin/subjects (เพิ่ม _count) ⭐️
 app.get('/admin/subjects', authenticateAdminToken, async (req, res) => {
     try {
-        const subjects = await prisma.subjects.findMany({ orderBy: { name: 'asc' } });
+        const subjects = await prisma.subjects.findMany({ 
+            orderBy: { name: 'asc' },
+            include: {
+                _count: { // ⭐️⭐️ นับจำนวน...
+                    select: { users: true } // ⭐️⭐️ ...users ที่เชื่อมโยงอยู่
+                }
+            }
+        });
         res.json(subjects);
     } catch (e) {
         console.error("Fetch subjects error:", e);
@@ -285,6 +288,7 @@ app.get('/admin/subjects', authenticateAdminToken, async (req, res) => {
 });
 
 app.post('/admin/subjects', authenticateAdminToken, async (req, res) => {
+    // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     const { code, name, description, isActive } = req.body;
     if (!code || !name) { return res.status(400).json({ error: 'Subject code and name are required' }); }
     try {
@@ -307,6 +311,7 @@ app.post('/admin/subjects', authenticateAdminToken, async (req, res) => {
 });
 
 app.put('/admin/subjects/:id', authenticateAdminToken, async (req, res) => {
+    // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     const subjectId = parseInt(req.params.id);
     if (isNaN(subjectId)) { return res.status(400).json({ error: 'Invalid subject ID' }); }
 
@@ -322,7 +327,6 @@ app.put('/admin/subjects/:id', authenticateAdminToken, async (req, res) => {
         if (description !== undefined) data.description = description;
         if (isActive !== undefined) data.is_active = Boolean(isActive);
 
-        // ตรวจสอบว่า Code ซ้ำกับคนอื่นหรือไม่
         if (code) {
              const existing = await prisma.subjects.findUnique({ where: { code } });
              if (existing && existing.subject_id !== subjectId) {
@@ -347,6 +351,7 @@ app.put('/admin/subjects/:id', authenticateAdminToken, async (req, res) => {
 });
 
 app.delete('/admin/subjects/:id', authenticateAdminToken, async (req, res) => {
+    // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     const subjectId = parseInt(req.params.id);
     if (isNaN(subjectId)) { return res.status(400).json({ error: 'Invalid subject ID' }); }
     try {
@@ -354,7 +359,6 @@ app.delete('/admin/subjects/:id', authenticateAdminToken, async (req, res) => {
         res.status(204).send();
     } catch (e) {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
-            // (Foreign key constraint fail - P2003)
             return res.status(409).json({ error: 'Cannot delete subject, it is linked to attendance logs.' });
         }
         console.error("Delete subject error:", e);
@@ -362,21 +366,68 @@ app.delete('/admin/subjects/:id', authenticateAdminToken, async (req, res) => {
     }
 });
 
+// ⭐️ [เพิ่มใหม่] GET /admin/subjects/:id/details (สำหรับหน้า User List ของวิชา) ⭐️
+app.get('/admin/subjects/:id/details', authenticateAdminToken, async (req, res) => {
+    const subjectId = parseInt(req.params.id);
+    if (isNaN(subjectId)) { return res.status(400).json({ error: 'Invalid subject ID' }); }
+    
+    console.log(`API: Fetching details for subject ${subjectId}`);
+    try {
+        const subjectDetails = await prisma.subjects.findUnique({
+            where: { subject_id: subjectId },
+            include: {
+                users: { // ⭐️⭐️ ดึงรายชื่อ User ที่ลงทะเบียน
+                    select: {
+                        user_id: true,
+                        username: true,
+                        full_name: true,
+                        face_embedding: true, // เอามาเช็ค
+                        is_active: true
+                    }
+                }
+            }
+        });
 
-// --- ⭐️ 5. Attendance Log Endpoint (Admin Protected) - (เพิ่มใหม่) ⭐️ ---
+        if (!subjectDetails) {
+            return res.status(404).json({ error: 'Subject not found' });
+        }
 
+        // เพิ่ม field 'face_registered' ให้เหมือนกับหน้า UserManagement
+        const usersWithFaceStatus = subjectDetails.users.map(u => ({
+            ...u,
+            face_registered: !!u.face_embedding,
+            face_embedding: undefined // ลบ embedding จริงออก
+        }));
+
+        const responsePayload = {
+            ...subjectDetails,
+            users: usersWithFaceStatus // ⭐️ ส่งรายชื่อ user ที่ปรับปรุงแล้ว
+        };
+        
+        delete responsePayload.face_embedding; // ลบของ user ออก
+        res.json(responsePayload);
+
+    } catch (e) {
+        console.error(`Fetch subject details error for ${subjectId}:`, e);
+        res.status(500).json({ error: 'Failed to fetch subject details' });
+    }
+});
+
+
+// --- ⭐️ 5. Attendance Log Endpoint (Admin Protected) ---
 app.get('/admin/attendance-logs', authenticateAdminToken, async (req, res) => {
+    // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     try {
         const logs = await prisma.attendance_logs.findMany({
             orderBy: { check_in_time: 'desc' },
             include: {
-                users: { // ⭐️ Join ตาราง users
+                users: {
                     select: { 
                         full_name: true,
                         username: true
                     }
                 },
-                subjects: { // ⭐️ Join ตาราง subjects
+                subjects: {
                     select: {
                         name: true,
                         code: true
@@ -392,9 +443,7 @@ app.get('/admin/attendance-logs', authenticateAdminToken, async (req, res) => {
 });
 
 
-// --- 6. MOBILE APP ENDPOINTS --- (ย้ายลำดับ)
-
-// GET /check-geofence (สำหรับ Mobile App ตรวจสอบตำแหน่ง)
+// --- 6. MOBILE APP ENDPOINTS ---
 app.get('/check-geofence', authenticateUserToken, async (req, res) => {
   // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
   const userId = req.user.user_id;
@@ -430,38 +479,30 @@ app.get('/check-geofence', authenticateUserToken, async (req, res) => {
   }
 });
 
-// GET /courses (สำหรับ Mobile App ดึงรายวิชา)
 app.get('/courses', authenticateUserToken, async (req, res) => {
-  // ⭐️ [แก้ไข] เปลี่ยนจากการดึงวิชาทั้งหมด เป็นการดึงเฉพาะวิชาของ user
-  
+  // ⭐️ (โค้ดเดิม... ไม่เปลี่ยนแปลง, กรองตาม user อยู่แล้ว)
   const userId = req.user.user_id;
   console.log(`API: User ${userId} fetching THEIR courses.`);
-  
   try {
     const userWithSubjects = await prisma.users.findUnique({
       where: { user_id: userId },
       select: { 
-        subjects: { // ⭐️ ดึงเฉพาะวิชาที่ user คนนี้ลงทะเบียน
-          where: { is_active: true }, // ⭐️ และต้องเป็นวิชาที่ active
+        subjects: { 
+          where: { is_active: true }, 
           orderBy: { name: 'asc' }
         } 
       }
     });
-
     if (!userWithSubjects) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
-    res.json(userWithSubjects.subjects); // ⭐️ ส่งกลับไปแค่ array ของวิชา
-    
+    res.json(userWithSubjects.subjects); 
   } catch (e) {
     console.error(`API Error during /courses for user ${userId}:`, e);
     res.status(500).json({ error: 'Failed to fetch courses' });
   }
 });
 
-
-// POST /login (สำหรับ User)
 app.post('/login', async (req, res) => {
   // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
   const { username, password } = req.body;
@@ -504,7 +545,6 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// POST /register-my-face (User Face Registration via Mobile)
 app.post('/register-my-face', authenticateUserToken, upload.single('image'), async (req, res) => {
   // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
   const userId = req.user.user_id;
@@ -555,12 +595,10 @@ app.post('/register-my-face', authenticateUserToken, upload.single('image'), asy
 });
 
 
-// POST /check-in (Main Mobile Endpoint - อัปเดตแล้ว)
 app.post('/check-in', authenticateUserToken, upload.single('image'), async (req, res) => {
-    // (โค้ดที่อัปเดตจากคำตอบก่อนหน้า)
+    // ⭐️ (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     const userId = req.user.user_id;
     
-    // --- ⭐️ รับ subject_id ที่เพิ่มเข้ามา ⭐️ ---
     const { latitude, longitude, subject_id } = req.body;
     console.log(`API: Received check-in attempt from user ${userId} for subject ${subject_id}`);
 
@@ -577,7 +615,6 @@ app.post('/check-in', authenticateUserToken, upload.single('image'), async (req,
     }
 
     try {
-        // ----- ⭐️ ขั้นตอนที่ 1: ตรวจสอบ Geofence (ก่อน) ⭐️ -----
         const activeGeofences = await prisma.geofences.findMany({ where: { is_active: true } });
         let isInGeofence = false;
         let distanceToCenter = Infinity;
@@ -603,7 +640,6 @@ app.post('/check-in', authenticateUserToken, upload.single('image'), async (req,
             return res.status(403).json({ error: 'Check-in failed: You are not within an authorized area.' });
         }
 
-        // ----- ⭐️ ขั้นตอนที่ 2: ตรวจสอบใบหน้า (ส่งรูปใน Memory) ⭐️ -----
         const user = await prisma.users.findUnique({ where: { user_id: userId }, select: { face_embedding: true } });
         if (!user) { return res.status(404).json({ error: 'User not found during check-in.' }); }
         if (!user.face_embedding || user.face_embedding.length < 2) {
@@ -626,15 +662,15 @@ app.post('/check-in', authenticateUserToken, upload.single('image'), async (req,
 
         if (!match) {
             console.log(`API: User ${userId} check-in failed (Face mismatch). Distance: ${distance?.toFixed(4) ?? 'N/A'}`);
+            // ⭐️⭐️⭐️ นี่คือจุดที่แก้ไข: 4C3 -> 403 ⭐️⭐️⭐️
             return res.status(403).json({ error: 'Check-in failed: Face does not match.' });
         }
 
-        // ----- ⭐️ ขั้นตอนที่ 3: บันทึกรูปภาพ (เมื่อผ่านทุกอย่าง) ⭐️ -----
         console.log("API: Saving check-in image (SUCCESS)...");
         const timestamp = Date.now();
         const filename = `user_${userId}_checkin_${timestamp}${path.extname(req.file.originalname || '.jpg')}`;
         const savedImagePath = path.join(__dirname, 'uploads', filename);
-        let imageUrl = `/uploads/${filename}`; // ⭐️ ใช้ let
+        let imageUrl = `/uploads/${filename}`; 
         
         const uploadDir = path.join(__dirname, 'uploads');
         try {
@@ -643,14 +679,13 @@ app.post('/check-in', authenticateUserToken, upload.single('image'), async (req,
             console.log(`API: Check-in image saved to ${savedImagePath}`);
         } catch (writeError) {
             console.error(`API: CRITICAL - Error writing check-in file for user ${userId}:`, writeError);
-            imageUrl = null; // ถ้าเซฟรูปไม่สำเร็จ ให้ Log เป็น null
+            imageUrl = null; 
         }
 
-        // ----- ⭐️ ขั้นตอนที่ 4: บันทึก Log สำเร็จ ⭐️ -----
         await prisma.attendance_logs.create({
             data: {
                 user_id: userId,
-                subject_id: parsedSubjectId, // ⭐️ บันทึก subject_id
+                subject_id: parsedSubjectId, 
                 latitude: userLat,
                 longitude: userLng,
                 is_in_geofence: true,
@@ -671,14 +706,14 @@ app.post('/check-in', authenticateUserToken, upload.single('image'), async (req,
 });
 
 
-// --- 7. Test Endpoint --- (ย้ายลำดับ)
+// --- 7. Test Endpoint ---
 app.get('/test-db', async (req, res) => {
     // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     try { const adminCount = await prisma.admins.count(); const userCount = await prisma.users.count(); res.json({ status: 'OK', message: `DB Connection OK. Found ${adminCount} admin(s), ${userCount} user(s).`, }); }
     catch (err) { console.error("DB Test Error:", err); res.status(500).json({ error: 'DB connection test failed', details: err.message }); }
 });
 
-// --- 8. Helper Function --- (ย้ายลำดับ)
+// --- 8. Helper Function ---
 function haversineDistance(lat1, lon1, lat2, lon2) {
     // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return Infinity;
