@@ -1,3 +1,6 @@
+// File: api/server.js
+// (เวอร์ชันเต็ม อัปเดต 3 endpoints)
+
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -84,14 +87,34 @@ app.post('/admin/login', async (req, res) => {
 
 // --- 2. User (Employee/Student) CRUD (Admin Protected) ---
 app.get('/users', authenticateAdminToken, async (req, res) => {
-    // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
+    // ⭐️ [แก้ไข] ให้ include วิชาที่ user ลงทะเบียนไว้ด้วย
     try {
       const users = await prisma.users.findMany({
         orderBy: { created_at: 'desc' },
-        select: { user_id: true, username: true, full_name: true, face_embedding: true, is_active: true, created_at: true, created_by_admin_id: true }
+        select: { 
+          user_id: true, 
+          username: true, 
+          full_name: true, 
+          face_embedding: true, 
+          is_active: true, 
+          created_at: true, 
+          created_by_admin_id: true,
+          subjects: { // ⭐️⭐️ เพิ่ม
+            select: {
+              subject_id: true,
+              code: true,
+              name: true
+            }
+          }
+        }
       });
-      const usersWithFaceStatus = users.map(u => ({...u, face_registered: !!u.face_embedding}));
+      
+      const usersWithFaceStatus = users.map(u => ({
+        ...u, 
+        face_registered: !!u.face_embedding
+      }));
       res.json(usersWithFaceStatus);
+      
   } catch (e) {
       console.error("Fetch users error:", e);
       res.status(500).json({ error: 'Failed to fetch users' });
@@ -115,20 +138,26 @@ app.post('/users', authenticateAdminToken, async (req, res) => {
     }
 });
 app.put('/users/:id', authenticateAdminToken, async (req, res) => {
-    // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
+    // ⭐️ [แก้ไข] ให้รับ subjectIds array เพื่ออัปเดต m-n
     const userId = parseInt(req.params.id);
     if (isNaN(userId)) return res.status(400).json({ error: 'Invalid user ID' });
-    const { username, fullName, isActive, password } = req.body;
-    if (username === undefined && fullName === undefined && isActive === undefined && password === undefined) {
+    
+    // ⭐️ รับ subjectIds จาก body
+    const { username, fullName, isActive, password, subjectIds } = req.body;
+    
+    if (username === undefined && fullName === undefined && isActive === undefined && password === undefined && subjectIds === undefined) {
        return res.status(400).json({ error: 'No fields provided for update' });
     }
+    
     try {
       const current = await prisma.users.findUnique({ where: { user_id: userId } });
       if (!current) return res.status(404).json({ error: 'User not found' });
+      
       if (username && username !== current.username) {
         const dup = await prisma.users.findUnique({ where: { username } });
         if (dup) return res.status(409).json({ error: 'Username already exists' });
       }
+      
       const data = {};
       if (username !== undefined) data.username = username;
       if (fullName !== undefined) data.full_name = fullName;
@@ -137,12 +166,31 @@ app.put('/users/:id', authenticateAdminToken, async (req, res) => {
         if (password.length < 6) { return res.status(400).json({ error: 'Password must be at least 6 characters long' }); }
         data.password_hash = await bcrypt.hash(password, 10);
       }
+      
+      // ⭐️⭐️ [เพิ่ม] Logic การอัปเดตวิชา
+      if (subjectIds && Array.isArray(subjectIds)) {
+        data.subjects = {
+          // 'set' จะลบของเก่าทั้งหมด แล้วเชื่อมกับ id ใหม่ใน array
+          set: subjectIds.map(id => ({ subject_id: parseInt(id) }))
+        };
+      }
+      // ⭐️⭐️ สิ้นสุดส่วนที่เพิ่ม
+      
       const updated = await prisma.users.update({
-        where: { user_id: userId }, data,
-        select: { user_id: true, username: true, full_name: true, is_active: true, face_embedding: true }
+        where: { user_id: userId }, 
+        data,
+        // ⭐️ [แก้ไข] ให้ include subjects ที่อัปเดตแล้วกลับไปด้วย
+        include: {
+           subjects: {
+             select: { subject_id: true, code: true, name: true }
+           }
+        }
       });
+      
       updated.face_registered = !!updated.face_embedding;
+      delete updated.password_hash; // ลบ hash ออกก่อนส่งกลับ
       res.json(updated);
+      
     } catch (e) {
       console.error("Update user error:", e);
       res.status(500).json({ error: 'Failed to update user' });
@@ -384,16 +432,30 @@ app.get('/check-geofence', authenticateUserToken, async (req, res) => {
 
 // GET /courses (สำหรับ Mobile App ดึงรายวิชา)
 app.get('/courses', authenticateUserToken, async (req, res) => {
-  // (โค้ดที่เพิ่มมาจากคำตอบก่อนหน้า)
-  console.log(`API: User ${req.user.user_id} fetching courses.`);
+  // ⭐️ [แก้ไข] เปลี่ยนจากการดึงวิชาทั้งหมด เป็นการดึงเฉพาะวิชาของ user
+  
+  const userId = req.user.user_id;
+  console.log(`API: User ${userId} fetching THEIR courses.`);
+  
   try {
-    const activeCourses = await prisma.subjects.findMany({
-      where: { is_active: true },
-      orderBy: { name: 'asc' }
+    const userWithSubjects = await prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { 
+        subjects: { // ⭐️ ดึงเฉพาะวิชาที่ user คนนี้ลงทะเบียน
+          where: { is_active: true }, // ⭐️ และต้องเป็นวิชาที่ active
+          orderBy: { name: 'asc' }
+        } 
+      }
     });
-    res.json(activeCourses);
+
+    if (!userWithSubjects) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json(userWithSubjects.subjects); // ⭐️ ส่งกลับไปแค่ array ของวิชา
+    
   } catch (e) {
-    console.error(`API Error during /courses for user ${req.user.user_id}:`, e);
+    console.error(`API Error during /courses for user ${userId}:`, e);
     res.status(500).json({ error: 'Failed to fetch courses' });
   }
 });

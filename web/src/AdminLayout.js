@@ -7,6 +7,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import MapIcon from '@mui/icons-material/Map';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import LogoutIcon from '@mui/icons-material/Logout';
+import ClassIcon from '@mui/icons-material/Class'; // ⭐️ Icon สำหรับ Subject
 import { removeToken } from './auth';
 
 const drawerWidth = 250;
@@ -15,6 +16,7 @@ const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
   { text: 'User Management', icon: <PeopleIcon />, path: '/users' },
   { text: 'Geofence', icon: <MapIcon />, path: '/geofences' },
+  { text: 'Subject Management', icon: <ClassIcon />, path: '/subjects' }, // ⭐️ เมนูที่เพิ่ม
   { text: 'Attendance Logs', icon: <BarChartIcon />, path: '/logs' },
 ];
 

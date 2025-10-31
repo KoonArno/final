@@ -7,6 +7,7 @@ import DashboardHome from './DashboardHome'; // ⭐️ หน้า Dashboard �
 import UserManagement from './UserManagement'; // Component เดิม
 import GeofenceManagement from './GeofenceManagement'; // Component เดิม
 import AttendanceLogPage from './AttendanceLogPage'; // ⭐️ หน้าใหม่สำหรับ Log
+import SubjectManagement from './SubjectManagement'; // ⭐️⭐️ IMPORT ใหม่ ⭐️⭐️
 import { getToken } from './auth';
 
 // Component ป้องกัน
@@ -33,6 +34,7 @@ function App() {
         <Route index element={<DashboardHome />} /> {/* หน้าแรก (Dashboard) */}
         <Route path="users" element={<UserManagement />} />
         <Route path="geofences" element={<GeofenceManagement />} />
+        <Route path="subjects" element={<SubjectManagement />} /> {/* ⭐️⭐️ Route ที่เพิ่ม ⭐️⭐️ */}
         <Route path="logs" element={<AttendanceLogPage />} />
       </Route>
 

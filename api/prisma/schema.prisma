@@ -1,5 +1,5 @@
-// File: face-attendance-system/api/prisma/schema.prisma
-// (เวอร์ชันอัปเดต: เพิ่ม subjects และเชื่อมโยงกับ logs)
+// File: api/prisma/schema.prisma
+// (เวอร์ชันอัปเดต: เพิ่มความสัมพันธ์ m-n ระหว่าง users กับ subjects)
 
 generator client {
   provider = "prisma-client-js"
@@ -26,10 +26,7 @@ model admins {
 model attendance_logs {
   log_id              Int       @id @default(autoincrement())
   user_id             Int
-
-  // --- ⭐️ Field ที่เพิ่มเข้ามา ⭐️ ---
-  subject_id          Int?      // ID ของวิชาที่เช็คอิน (Nullable ถ้าอาจมี log ที่ไม่ระบุวิชา)
-  // --- ⭐️ สิ้นสุด Field ที่เพิ่มเข้ามา ⭐️ ---
+  subject_id          Int?      // ID ของวิชาที่เช็คอิน
 
   check_in_time       DateTime? @default(now()) @db.Timestamptz(3)
   latitude            Float?    @db.DoublePrecision
@@ -38,18 +35,13 @@ model attendance_logs {
   face_match_distance Float?    @db.DoublePrecision
   image_url           String?   @db.VarChar(255)
   
-  // --- ⭐️ Relation ที่เพิ่มเข้ามา ⭐️ ---
+  // Relations
   subjects            subjects? @relation(fields: [subject_id], references: [subject_id], onDelete: SetNull)
-  // --- ⭐️ สิ้นสุด Relation ที่เพิ่มเข้ามา ⭐️ ---
-
-  // Relations (ของเดิม)
   users               users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade, map: "attendance_logs_user_id_fkey") 
 
   @@index([user_id, check_in_time(sort: Desc)], map: "idx_attendance_user_time")
   @@index([is_in_geofence], map: "idx_attendance_is_in_geofence")
-  // --- ⭐️ Index ที่เพิ่มเข้ามา ⭐️ ---
   @@index([subject_id], map: "idx_attendance_subject_id")
-  // --- ⭐️ สิ้นสุด Index ที่เพิ่มเข้ามา ⭐️ ---
   @@map("attendance_logs")
 }
 
@@ -71,7 +63,6 @@ model geofences {
   @@map("geofences")
 }
 
-// --- ⭐️ Model ใหม่ที่เพิ่มเข้ามา ⭐️ ---
 model subjects {
   subject_id    Int       @id @default(autoincrement())
   code          String    @unique @db.VarChar(50) // รหัสวิชา เช่น CS101
@@ -83,9 +74,11 @@ model subjects {
   // Relation: 1 วิชามีได้หลาย Log การเข้าเรียน
   attendance_logs attendance_logs[]
 
+  // --- ⭐️⭐️ [เพิ่ม] ความสัมพันธ์ m-n กับ users ⭐️⭐️ ---
+  users           users[]   @relation("UserSubjects")
+
   @@map("subjects")
 }
-// --- ⭐️ สิ้นสุด Model ใหม่ ⭐️ ---
 
 model users {
   user_id               Int       @id @default(autoincrement())
@@ -96,9 +89,13 @@ model users {
   is_active             Boolean?  @default(true)
   created_at            DateTime? @default(now()) @db.Timestamptz(3)
   created_by_admin_id   Int?
+  
   // Relations
   admins                admins?   @relation(fields: [created_by_admin_id], references: [admin_id], onDelete: SetNull, map: "users_created_by_admin_id_fkey")
   attendance_logs       attendance_logs[]
+
+  // --- ⭐️⭐️ [เพิ่ม] ความสัมพันธ์ m-n กับ subjects ⭐️⭐️ ---
+  subjects              subjects[] @relation("UserSubjects")
 
   @@index([is_active], map: "idx_users_is_active")
   @@map("users")
