@@ -1,0 +1,57 @@
+# File: face-attendance-system/docker-compose.yml
+# (เวอร์ชันล่าสุด ไม่ต้องใส่ version: อีกต่อไป)
+
+services:
+  # 1. Database Service
+  db:
+    image: postgres:15-alpine
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: 'admin'
+      POSTGRES_PASSWORD: 'password123'
+      POSTGRES_DB: 'attendance_db'
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped # เพิ่ม restart policy
+
+  # 2. AI API Service (Python/Flask/DeepFace)
+  ai:
+    build: ./ai
+    container_name: ai_service
+    ports:
+      - '5001:5001'
+    restart: unless-stopped
+
+  # 3. API หลัก (Node.js/Express/Prisma)
+  api:
+    build: ./api
+    container_name: api_service
+    ports:
+      - '8000:8000'
+    depends_on:
+      - db
+      - ai
+    environment:
+      DATABASE_URL: 'postgresql://admin:password123@db:5432/attendance_db'
+      AI_API_URL: 'http://ai:5001' # URL ภายใน Docker network
+      # JWT_SECRET: 'your-very-secret-key-change-this' # (ควรตั้งค่าตรงนี้ หรือ .env)
+    volumes:
+       - ./api/uploads:/app/uploads # ⭐️ Map โฟลเดอร์ uploads ออกมาข้างนอก
+    restart: unless-stopped
+
+  # 4. Web Admin Service (React)
+  web:
+    build: ./web
+    container_name: web_service
+    ports:
+      - '3000:3000'
+    depends_on:
+      - api
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
