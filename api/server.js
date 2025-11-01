@@ -1,5 +1,5 @@
 // File: api/server.js
-// (เวอร์ชันเต็ม แก้ไข 4C3 -> 403)
+// (เวอร์ชันเต็ม เพิ่ม Endpoint ใหม่สำหรับ Import CSV)
 
 const express = require('express');
 const axios = require('axios');
@@ -11,6 +11,8 @@ const multer = require('multer');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
+const csv = require('csv-parser'); // ⭐️ [เพิ่ม] Library สำหรับ CSV
+const stream = require('stream'); // ⭐️ [เพิ่ม] Library สำหรับ Stream
 
 const app = express();
 const PORT = 8000;
@@ -21,7 +23,8 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const prisma = new PrismaClient();
-const upload = multer({ storage: multer.memoryStorage() });
+// ⭐️ [แก้ไข] ปรับ Multer ให้รับไฟล์ได้ทั้งรูปและ CSV (โดยแยก logic ใน route)
+const upload = multer({ storage: multer.memoryStorage() }); 
 
 // --- Middleware: Authenticate Admin Token ---
 const authenticateAdminToken = (req, res, next) => {
@@ -87,7 +90,7 @@ app.post('/admin/login', async (req, res) => {
 
 // --- 2. User (Employee/Student) CRUD (Admin Protected) ---
 app.get('/users', authenticateAdminToken, async (req, res) => {
-    // ⭐️ (โค้ดเดิม... ไม่เปลี่ยนแปลง)
+    // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     try {
       const users = await prisma.users.findMany({
         orderBy: { created_at: 'desc' },
@@ -138,7 +141,7 @@ app.post('/users', authenticateAdminToken, async (req, res) => {
     }
 });
 app.put('/users/:id', authenticateAdminToken, async (req, res) => {
-    // ⭐️ (โค้ดเดิม... ไม่เปลี่ยนแปลง)
+    // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     const userId = parseInt(req.params.id);
     if (isNaN(userId)) return res.status(400).json({ error: 'Invalid user ID' });
     
@@ -269,14 +272,14 @@ app.delete('/geofences/:id', authenticateAdminToken, async (req, res) => {
 
 // --- ⭐️ 4. Subject CRUD (Admin Protected) ---
 
-// ⭐️ [แก้ไข] GET /admin/subjects (เพิ่ม _count) ⭐️
 app.get('/admin/subjects', authenticateAdminToken, async (req, res) => {
+    // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     try {
         const subjects = await prisma.subjects.findMany({ 
             orderBy: { name: 'asc' },
             include: {
-                _count: { // ⭐️⭐️ นับจำนวน...
-                    select: { users: true } // ⭐️⭐️ ...users ที่เชื่อมโยงอยู่
+                _count: { 
+                    select: { users: true } 
                 }
             }
         });
@@ -366,8 +369,8 @@ app.delete('/admin/subjects/:id', authenticateAdminToken, async (req, res) => {
     }
 });
 
-// ⭐️ [เพิ่มใหม่] GET /admin/subjects/:id/details (สำหรับหน้า User List ของวิชา) ⭐️
 app.get('/admin/subjects/:id/details', authenticateAdminToken, async (req, res) => {
+    // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     const subjectId = parseInt(req.params.id);
     if (isNaN(subjectId)) { return res.status(400).json({ error: 'Invalid subject ID' }); }
     
@@ -376,12 +379,12 @@ app.get('/admin/subjects/:id/details', authenticateAdminToken, async (req, res) 
         const subjectDetails = await prisma.subjects.findUnique({
             where: { subject_id: subjectId },
             include: {
-                users: { // ⭐️⭐️ ดึงรายชื่อ User ที่ลงทะเบียน
+                users: { 
                     select: {
                         user_id: true,
                         username: true,
                         full_name: true,
-                        face_embedding: true, // เอามาเช็ค
+                        face_embedding: true, 
                         is_active: true
                     }
                 }
@@ -392,25 +395,124 @@ app.get('/admin/subjects/:id/details', authenticateAdminToken, async (req, res) 
             return res.status(404).json({ error: 'Subject not found' });
         }
 
-        // เพิ่ม field 'face_registered' ให้เหมือนกับหน้า UserManagement
         const usersWithFaceStatus = subjectDetails.users.map(u => ({
             ...u,
             face_registered: !!u.face_embedding,
-            face_embedding: undefined // ลบ embedding จริงออก
+            face_embedding: undefined 
         }));
 
         const responsePayload = {
             ...subjectDetails,
-            users: usersWithFaceStatus // ⭐️ ส่งรายชื่อ user ที่ปรับปรุงแล้ว
+            users: usersWithFaceStatus 
         };
         
-        delete responsePayload.face_embedding; // ลบของ user ออก
+        delete responsePayload.face_embedding; 
         res.json(responsePayload);
 
     } catch (e) {
         console.error(`Fetch subject details error for ${subjectId}:`, e);
         res.status(500).json({ error: 'Failed to fetch subject details' });
     }
+});
+
+// ⭐️ [เพิ่มใหม่] POST /admin/subjects/:id/import-users (สำหรับ Import CSV) ⭐️
+app.post('/admin/subjects/:id/import-users', authenticateAdminToken, upload.single('csvfile'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No CSV file uploaded.' });
+    
+    const subjectId = parseInt(req.params.id);
+    if (isNaN(subjectId)) return res.status(400).json({ error: 'Invalid subject ID.' });
+
+    console.log(`API: Starting CSV import for subject ${subjectId}`);
+    
+    const usersToProcess = [];
+    const errors = [];
+    let rowCounter = 0;
+
+    // ⭐️ 1. อ่านไฟล์ CSV จาก Buffer ใน memory
+    const parser = csv({ 
+        mapHeaders: ({ header }) => header.trim().toLowerCase() // ⭐️ ทำให้ header เป็นตัวเล็กทั้งหมด
+    })
+    .on('data', (row) => {
+        rowCounter++;
+        let studentId, fullName;
+
+        // ⭐️ 2. ตรวจสอบ Header (รองรับทั้งภาษาไทยและอังกฤษ)
+        if (row.student_id && row.full_name) {
+            studentId = row.student_id.trim();
+            fullName = row.full_name.trim();
+        } else if (row['รหัสนักศึกษา'] && row['ชื่อนามสกุล']) {
+            studentId = row['รหัสนักศึกษา'].trim();
+            fullName = row['ชื่อนามสกุล'].trim();
+        }
+
+        if (studentId && fullName) {
+            usersToProcess.push({
+                username: studentId,
+                full_name: fullName,
+            });
+        } else {
+            errors.push(`Row ${rowCounter}: Missing 'student_id' or 'full_name' (or 'รหัสนักศึกษา'/'ชื่อนามสกุล').`);
+        }
+    })
+    .on('end', async () => {
+        // ⭐️ 3. สิ้นสุดการอ่านไฟล์
+        if (usersToProcess.length === 0 && errors.length > 0) {
+            return res.status(400).json({ error: "CSV parsing failed. No valid data found.", details: errors });
+        }
+        if (usersToProcess.length === 0) {
+             return res.status(400).json({ error: "CSV is empty or format is incorrect." });
+        }
+
+        console.log(`API: Parsed ${usersToProcess.length} users from CSV. Starting database transaction...`);
+        let processedCount = 0;
+        try {
+            // ⭐️ 4. ใช้ Transaction เพื่อความปลอดภัย
+            await prisma.$transaction(async (tx) => {
+                for (const user of usersToProcess) {
+                    
+                    // ⭐️ 5. Hash Password (ตามที่คุณขอ: password = username)
+                    const password_hash = await bcrypt.hash(user.username, 10);
+                    
+                    // ⭐️ 6. ใช้ Upsert (Update or Insert)
+                    await tx.users.upsert({
+                        where: { username: user.username },
+                        create: {
+                            username: user.username,
+                            full_name: user.full_name,
+                            password_hash: password_hash,
+                            is_active: true,
+                            subjects: { // ⭐️ 7. สร้าง User ใหม่ พร้อมผูกกับวิชานี้
+                                connect: { subject_id: subjectId }
+                            }
+                        },
+                        update: {
+                            full_name: user.full_name, // อัปเดตชื่อ
+                            password_hash: password_hash, // รีเซ็ตรหัสผ่าน
+                            is_active: true,
+                            subjects: { // ⭐️ 8. ถ้า User มีอยู่แล้ว ก็ให้ผูกกับวิชานี้
+                                connect: { subject_id: subjectId }
+                            }
+                        }
+                    });
+                    processedCount++;
+                }
+            });
+            
+            console.log(`API: Import successful. Processed ${processedCount} users.`);
+            res.json({ 
+                message: `Import successful. Processed ${processedCount} users.`,
+                details: `Successfully created or updated ${processedCount} users and enrolled them in the subject.`,
+                errors: errors 
+            });
+
+        } catch (e) {
+            console.error("CSV Import Transaction Error:", e);
+            res.status(500).json({ error: "An error occurred during the database transaction.", details: e.message });
+        }
+    });
+
+    // ⭐️ เริ่มต้น Stream
+    stream.Readable.from(req.file.buffer).pipe(parser);
 });
 
 
@@ -480,7 +582,7 @@ app.get('/check-geofence', authenticateUserToken, async (req, res) => {
 });
 
 app.get('/courses', authenticateUserToken, async (req, res) => {
-  // ⭐️ (โค้ดเดิม... ไม่เปลี่ยนแปลง, กรองตาม user อยู่แล้ว)
+  // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
   const userId = req.user.user_id;
   console.log(`API: User ${userId} fetching THEIR courses.`);
   try {
@@ -596,7 +698,7 @@ app.post('/register-my-face', authenticateUserToken, upload.single('image'), asy
 
 
 app.post('/check-in', authenticateUserToken, upload.single('image'), async (req, res) => {
-    // ⭐️ (โค้ดเดิม... ไม่เปลี่ยนแปลง)
+    // (โค้ดเดิม... ไม่เปลี่ยนแปลง)
     const userId = req.user.user_id;
     
     const { latitude, longitude, subject_id } = req.body;
@@ -662,7 +764,6 @@ app.post('/check-in', authenticateUserToken, upload.single('image'), async (req,
 
         if (!match) {
             console.log(`API: User ${userId} check-in failed (Face mismatch). Distance: ${distance?.toFixed(4) ?? 'N/A'}`);
-            // ⭐️⭐️⭐️ นี่คือจุดที่แก้ไข: 4C3 -> 403 ⭐️⭐️⭐️
             return res.status(403).json({ error: 'Check-in failed: Face does not match.' });
         }
 
